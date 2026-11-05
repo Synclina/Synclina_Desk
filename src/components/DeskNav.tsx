@@ -4,11 +4,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import styles from "./Desk.module.css";
 
-export default function DeskNav({ apps }: { apps: { slug: string; title: string }[] }) {
+export default function DeskNav({ apps, showPeople }: { apps: { slug: string; title: string }[]; showPeople: boolean }) {
   const path = usePathname();
   const links = [
     { href: "/home", label: "Overview" },
     ...apps.map((a) => ({ href: `/apps/${a.slug}`, label: a.title })),
+    ...(showPeople ? [{ href: "/people", label: "People" }] : []),
     { href: "/activity", label: "Activity" },
     { href: "/account", label: "Account" },
   ];

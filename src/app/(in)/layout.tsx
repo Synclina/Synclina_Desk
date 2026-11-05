@@ -7,5 +7,5 @@ import { requireStaff } from "@/lib/session";
 export default async function SignedInLayout({ children }: { children: React.ReactNode }) {
   const staff = await requireStaff();
   const apps = DESK_APPS.filter((a) => canUseApp(staff, a.slug)).map(({ slug, title }) => ({ slug, title }));
-  return <DeskShell apps={apps}>{children}</DeskShell>;
+  return <DeskShell apps={apps} showPeople={staff.role === "owner"}>{children}</DeskShell>;
 }

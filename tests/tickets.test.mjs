@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { keyFitsProject, readStatus, readTicketChange, replyLink, textOrNull, ticketOwner } from "../src/lib/rules.ts";
+import { keyFitsProject, personState, readApps, readInvite, readStatus, readTicketChange, replyLink, textOrNull, ticketOwner, validId } from "../src/lib/rules.ts";
 
 const DRIVSYNC = ["DS", "FS"];
 const good = { uid: "abc123", reference: "DS-ABC234", status: "fixed", note: " Done " };
@@ -70,4 +70,58 @@ test("a reply link only uses a plain address, and encodes the subject", () => {
   for (const bad of [null, "", "a@example.com?bcc=x@evil.test", "a@example.com&cc=x", "a%40b@example.com", "a,b@example.com", "not-an-email"]) {
     assert.equal(replyLink(bad, "Hi"), null);
   }
+});
+
+const APPS = ["drivsync", "tripsync", "instagro"];
+const invite = { email: " New.Person@Example.com ", name: " New Person ", apps: ["tripsync"] };
+
+test("a good invite is read and tidied", () => {
+  assert.deepEqual(readInvite(invite, APPS), { email: "new.person@example.com", name: "New Person", apps: ["tripsync"] });
+});
+
+test("an invite has no way to ask for more than a maintainer", () => {
+  assert.equal("role" in readInvite({ ...invite, role: "owner" }, APPS), false);
+});
+
+test("bad invites are refused", () => {
+  for (const bad of [
+    null,
+    "x",
+    { ...invite, email: "nope" },
+    { ...invite, email: "a@b.com?bcc=x@evil.test" },
+    { ...invite, email: "a@b.com,c@d.com" },
+    { ...invite, email: 5 },
+    { ...invite, name: "" },
+    { ...invite, name: "   " },
+    { ...invite, name: "x".repeat(61) },
+    { ...invite, name: "two\nlines" },
+    { ...invite, apps: [] },
+    { ...invite, apps: ["made-up"] },
+    { ...invite, apps: "drivsync" },
+  ]) {
+    assert.equal(readInvite(bad, APPS), null);
+  }
+});
+
+test("apps are read in a steady order, each once, known ones only", () => {
+  assert.deepEqual(readApps(["instagro", "drivsync", "drivsync"], APPS), ["drivsync", "instagro"]);
+  assert.deepEqual(readApps([], APPS), []);
+  for (const bad of [null, "drivsync", ["drivsync", "x"], [5], [{}]]) assert.equal(readApps(bad, APPS), null);
+});
+
+test("a person's state comes from their record", () => {
+  const now = 1000;
+  assert.equal(personState({ role: "owner", active: true }, now), "main");
+  assert.equal(personState({ role: "owner", active: false }, now), "main");
+  assert.equal(personState({ role: "maintainer", active: true }, now), "active");
+  assert.equal(personState({ role: "maintainer", active: false, setupExpiresAt: 2000 }, now), "waiting");
+  assert.equal(personState({ role: "maintainer", active: false, setupExpiresAt: 500 }, now), "expired");
+  assert.equal(personState({ role: "maintainer", active: false }, now), "expired");
+  assert.equal(personState({ role: "maintainer", active: false, removedAt: 5, setupExpiresAt: 2000 }, now), "removed");
+});
+
+test("ids and tokens can't be paths", () => {
+  assert.equal(validId("A".repeat(43)), true);
+  assert.equal(validId("a_b-".repeat(10) + "abc"), true);
+  for (const bad of [null, 5, "", "A".repeat(42), "A".repeat(44), "../".repeat(14) + "a", "A/".repeat(21) + "A"]) assert.equal(validId(bad), false);
 });

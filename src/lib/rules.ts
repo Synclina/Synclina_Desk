@@ -8,6 +8,7 @@ export const IP_WINDOW_MS = 15 * 60 * 1000;
 export const IP_MAX_TRIES = 20;
 
 export const PASSWORD_MIN = 14;
+export const PASSWORD_LIMIT = 200;
 
 const MAX_LOCK_MS = 60 * 60 * 1000;
 const FREE_TRIES = 5;
@@ -42,6 +43,9 @@ export function sameOrigin(origin: string | null, host: string | null): boolean 
 export const normalizeEmail = (email: string) => email.trim().toLowerCase();
 
 export const validEmail = (email: string) => email.length <= 254 && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email);
+
+/** An address with nothing in it that could change a link or an email's recipients. */
+export const plainEmail = (email: string) => validEmail(email) && !/[?&%=#,;:/\\<>"']/.test(email);
 
 export type Role = "owner" | "maintainer";
 export type Access = { id: string; role: Role; apps: string[] };
@@ -102,6 +106,42 @@ export const textOrNull = (value: unknown) => (typeof value === "string" ? value
 
 /** A link to reply by email, or null when the address isn't a plain one. */
 export function replyLink(email: string | null, subject: string): string | null {
-  if (!email || !validEmail(email) || /[?&%=#,;:/\\<>"']/.test(email)) return null;
+  if (!email || !plainEmail(email)) return null;
   return `mailto:${email}?subject=${encodeURIComponent(subject)}`;
+}
+
+/** How long an invite or reset link works. */
+export const INVITE_LIFE_MS = 3 * 24 * 60 * 60 * 1000;
+export const NAME_LIMIT = 60;
+
+/** A link's token or a person's id: 32 random or hashed bytes, so never a path. */
+export const validId = (value: unknown): value is string => typeof value === "string" && /^[A-Za-z0-9_-]{43}$/.test(value);
+
+/** Known apps only, each once, in a steady order; null when anything else is sent. */
+export function readApps(value: unknown, known: string[]): string[] | null {
+  if (!Array.isArray(value) || !value.every((s) => typeof s === "string" && known.includes(s))) return null;
+  return known.filter((s) => value.includes(s));
+}
+
+export type InviteRequest = { email: string; name: string; apps: string[] };
+
+/** An invite from the page; null when anything is off. It has no role: invites only ever make maintainers. */
+export function readInvite(body: unknown, known: string[]): InviteRequest | null {
+  if (typeof body !== "object" || body === null) return null;
+  const { email, name, apps } = body as Record<string, unknown>;
+  if (typeof email !== "string" || typeof name !== "string") return null;
+  const cleanEmail = normalizeEmail(email);
+  const cleanName = name.trim();
+  if (!plainEmail(cleanEmail) || !cleanName || cleanName.length > NAME_LIMIT || /[\u0000-\u001f\u007f]/.test(cleanName)) return null;
+  const chosen = readApps(apps, known);
+  return chosen && chosen.length > 0 ? { email: cleanEmail, name: cleanName, apps: chosen } : null;
+}
+
+export type PersonState = "main" | "active" | "waiting" | "expired" | "removed";
+
+export function personState(data: { role?: unknown; active?: unknown; removedAt?: unknown; setupExpiresAt?: unknown }, now: number): PersonState {
+  if (data.role === "owner") return "main";
+  if (data.removedAt) return "removed";
+  if (data.active === true) return "active";
+  return Number(data.setupExpiresAt ?? 0) > now ? "waiting" : "expired";
 }

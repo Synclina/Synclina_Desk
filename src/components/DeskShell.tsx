@@ -4,14 +4,14 @@ import SignOutButton from "./SignOutButton";
 import SynclinaMark from "./SynclinaMark";
 import styles from "./Desk.module.css";
 
-export default function DeskShell({ apps, children }: { apps: { slug: string; title: string }[]; children: React.ReactNode }) {
+export default function DeskShell({ apps, showPeople, children }: { apps: { slug: string; title: string }[]; showPeople: boolean; children: React.ReactNode }) {
   return (
     <div className={styles.shell}>
       <header className={styles.header}>
         <Link href="/home" className={styles.brand} aria-label="Overview">
           <SynclinaMark size={26} />
         </Link>
-        <DeskNav apps={apps} />
+        <DeskNav apps={apps} showPeople={showPeople} />
         <SignOutButton />
       </header>
       <main className={styles.main}>{children}</main>

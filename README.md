@@ -11,7 +11,7 @@ Private ticket desk for Synclina's apps. It has no public pages: everything need
 
 - **Phase 1, foundation: live at https://synclina-desk.vercel.app** (Firebase project `synclina-desk`, Mumbai). Main account signed in on 5 November 2026. Login, sessions, activity log, main account setup.
 - **Phase 2, DrivSync tickets: live.** Checked on 5 Nov 2026: a status and note saved in Desk reached the open ticket in the app on a phone by themselves.
-- Phase 3, people (invites, app access, removing and resetting): not started.
+- **Phase 3, people: built and tested locally.** Invites, app access, resetting and removing, on the People page (main account only).
 - Phase 4, switch-over from the public website's admin area: not started.
 
 ## How it fits together
@@ -24,10 +24,21 @@ Private ticket desk for Synclina's apps. It has no public pages: everything need
 
 | Collection | Document | Fields |
 |---|---|---|
-| `staff` | Hash of the lower-case email | `email`, `name`, `role` (`owner`/`maintainer`), `apps`, `active`, `passwordHash` (scrypt), `totpSecret` (AES-256-GCM, tied to this document), `recoveryHashes`, `usedRecovery`, `fails`, `lockedUntil`, `lastTotpStep`, `createdAt` |
+| `staff` | Hash of the lower-case email | `email`, `name`, `role` (`owner`/`maintainer`), `apps`, `active`, `passwordHash` (scrypt), `totpSecret` (AES-256-GCM, tied to this document), `recoveryHashes`, `usedRecovery`, `fails`, `lockedUntil`, `lastTotpStep`, `createdAt`, `setupExpiresAt` (while waiting for a link to be used), `removedAt` (record stays for the log, without secrets or apps) |
+| `invites` | Hash of the link's token | `staffId`, `totpSecret` (AES-256-GCM, tied to that person), `createdAt`, `expiresAt`. Removed when used, replaced or the person is removed; a run-out one stays until then, and does nothing |
 | `sessions` | Hash of the cookie | `staffId`, `createdAt`, `lastSeenAt` |
 | `activity` | Automatic | `actorId`, `actor`, `action`, `detail`, `app`, `at` |
 | `sign_in_limits` | Hash of the address | `count`, `since` |
+
+## People
+
+The main account manages everyone on the People page. Nobody else can see it or use its routes, and it can't change the main account: that's only `npm run desk:setup -- --reset`.
+
+1. **Invite:** email, name and apps. This makes a maintainer who can't sign in yet, and a link that's emailed if Brevo is set up, and always shown once to copy.
+2. **Join:** the link opens `/join`, where they choose a password, add Desk to their authenticator, prove it with a code, and save 8 recovery codes. Then they sign in as usual.
+3. **Change apps:** applies on their next click.
+4. **Reset:** ends their sessions and deletes their password, authenticator and recovery codes at once, then makes a new link. Also how someone gets a new link when theirs is lost or has run out.
+5. **Remove:** ends their sessions and link, deletes their secrets and apps. The email can be invited again later, from scratch.
 
 ## Connecting an app
 
@@ -44,7 +55,9 @@ The app must store tickets at `accounts/{uid}/support/{reference}` with `subject
 - 5 wrong tries lock that person only, for 15 minutes, then 30, then an hour at most. Tries during a lock don't extend it. Each address gets 20 tries in 15 minutes.
 - Sessions end after 30 minutes idle or 8 hours. Turning someone off takes effect on their next click.
 - Strict policy with a nonce on every page, no framing, no caching, hidden from search engines. Preview deployments answer nothing.
-- Only hashes of cookies and addresses are stored.
+- Only hashes of cookies, addresses and link tokens are stored.
+- Links work once, for 3 days, and a newer link ends the earlier one. The token sits after the `#`, so it isn't sent in page requests or kept in server logs. Made-up, used, run-out and taken-back links all answer the same, and link tries count towards the same per-address limit as sign-ins.
+- The code used to join can't also sign in. Invites can only ever make maintainers.
 
 ## Commands
 

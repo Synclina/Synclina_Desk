@@ -60,7 +60,7 @@ async function addPerson(key, email, role, apps, active = true) {
   people[key] = { id, email, totp, recovery, code: (d = 0) => codeForStep(totp, stepAt(Date.now()) + d) };
 }
 
-for (const c of ["staff", "sessions", "activity", "sign_in_limits"]) await db.recursiveDelete(db.collection(c));
+for (const c of ["staff", "sessions", "activity", "sign_in_limits", "invites"]) await db.recursiveDelete(db.collection(c));
 await addPerson("Owner", "owner@example.test", "owner", []);
 await addPerson("Maya", "maya@example.test", "maintainer", ["drivsync"]);
 await addPerson("Tara", "tara@example.test", "maintainer", ["tripsync"]);
@@ -352,6 +352,224 @@ try {
   ok("signed in before being turned off", (await get("/home", recovCookie)).status === 200);
   await db.collection("staff").doc(R.id).update({ active: false });
   ok("turned off: out on the next click", (await get("/home", recovCookie)).status === 307);
+
+  // People: who may manage them
+  await db.collection("staff").doc(B.id).update({ lastTotpStep: 0, fails: 0 });
+  r = await signIn(B, B.code(1));
+  const boss = cookieOf(r);
+  await db.collection("staff").doc(T.id).update({ lastTotpStep: 0, fails: 0 });
+  r = await signIn(T, T.code(1));
+  const tara2 = cookieOf(r);
+  const newbie = { email: "New.Person@Example.test", name: "Nia New", apps: ["tripsync"] };
+  const nid = staffIdForEmail("new.person@example.test");
+  r = await get("/people");
+  ok("people page sends strangers to sign-in", r.status === 307);
+  r = await get("/people", tara2);
+  page = await r.text();
+  ok("a maintainer can't open the people page", (r.status === 404 || page.includes("NEXT_HTTP_ERROR_FALLBACK;404")) && !page.includes(B.email), `${r.status}`);
+  page = await plain("/home", tara2);
+  ok("a maintainer has no People link", !page.includes('href="/people"'));
+  r = await post("/api/people", newbie);
+  ok("inviting needs a session", r.status === 401);
+  r = await post("/api/people", newbie, { cookie: tara2 });
+  ok("a maintainer can't invite", r.status === 404 && !(await db.collection("staff").doc(nid).get()).exists);
+  r = await post("/api/people", newbie, { cookie: boss, origin: "https://evil.example" });
+  ok("inviting from another site refused", r.status === 403);
+  for (const [why, action] of [["reset", { action: "reset" }], ["remove", { action: "remove" }], ["change access of", { action: "apps", apps: ["drivsync", "tripsync"] }]]) {
+    r = await post(`/api/people/${T.id}`, action, { cookie: tara2 });
+    ok(`a maintainer can't ${why} anyone, even themselves`, r.status === 404);
+  }
+  ok("their record is unchanged", (await db.collection("staff").doc(T.id).get()).data().apps.join() === "tripsync");
+
+  // The main account can't be touched from here
+  for (const action of [{ action: "reset" }, { action: "remove" }, { action: "apps", apps: [] }]) {
+    r = await post(`/api/people/${B.id}`, action, { cookie: boss });
+    ok(`the main account can't be changed: ${action.action}`, r.status === 404);
+  }
+  const bossDoc = (await db.collection("staff").doc(B.id).get()).data();
+  ok("the main account is unchanged", bossDoc.active === true && bossDoc.role === "owner" && !!bossDoc.passwordHash);
+  r = await post("/api/people", { ...newbie, email: B.email }, { cookie: boss });
+  ok("inviting the main account's email is refused", r.status === 409);
+  r = await post("/api/people", { ...newbie, email: T.email }, { cookie: boss });
+  ok("inviting someone who already has an account is refused", r.status === 409);
+  ok("and doesn't change them", !!(await db.collection("staff").doc(T.id).get()).data().passwordHash);
+  r = await post("/api/people", { ...newbie, role: "owner", apps: ["made-up"] }, { cookie: boss });
+  ok("an invite for a made-up app is refused", r.status === 422);
+  r = await post("/api/people/..%2F..%2Fx", { action: "remove" }, { cookie: boss });
+  ok("a made-up person id is refused", r.status === 404);
+  r = await post(`/api/people/${"A".repeat(43)}`, { action: "remove" }, { cookie: boss });
+  ok("a person who doesn't exist isn't created", r.status === 404 && !(await db.collection("staff").doc("A".repeat(43)).get()).exists);
+
+  // An invite
+  r = await post("/api/people", { ...newbie, role: "owner" }, { cookie: boss });
+  let made = await r.json();
+  ok("the main account invites someone", r.status === 200 && made.link?.startsWith(`${O}/join#`), JSON.stringify(made).slice(0, 80));
+  ok("no email service here, and it says so", made.emailed === false);
+  const tokenOf = (link) => link.split("#")[1];
+  let joinToken = tokenOf(made.link);
+  let nDoc = (await db.collection("staff").doc(nid).get()).data();
+  ok("an invite always makes a maintainer", nDoc.role === "maintainer" && nDoc.active === false && nDoc.apps.join() === "tripsync" && nDoc.email === "new.person@example.test");
+  ok("nothing secret is stored yet", !nDoc.passwordHash && !nDoc.totpSecret);
+  const stolen = await db.collection("invites").get();
+  ok("only a hash of the link is stored", stolen.size === 1 && stolen.docs[0].id === sha256(joinToken) && !JSON.stringify(stolen.docs[0].data()).includes(joinToken));
+  page = await plain("/people", boss);
+  ok("the people page lists them, waiting", page.includes("Nia New") && page.includes("Invited") && page.includes("Main account"));
+  ok("no secrets on the people page", !page.includes(joinToken) && !page.includes("passwordHash") && !page.includes("totpSecret") && !page.includes(bossDoc.passwordHash));
+  r = await post("/api/login", { email: "new.person@example.test", password: PW, code: "000000" });
+  ok("someone invited can't sign in yet", r.status === 401);
+  r = await post("/api/people", newbie, { cookie: boss });
+  ok("inviting them twice is refused", r.status === 409);
+
+  // The join page
+  r = await get("/join");
+  page = await r.text();
+  ok("the join page opens, and holds nothing", r.status === 200 && !page.includes("new.person"));
+  ok("the join page is hidden and uncached", /noindex/.test(r.headers.get("x-robots-tag") ?? "") && /no-store/.test(r.headers.get("cache-control") ?? ""));
+  const join = (body, opts) => post("/api/join", body, opts);
+  r = await join({ step: "check", token: joinToken }, { origin: "https://evil.example" });
+  ok("a link from another site refused", r.status === 403);
+  r = await join({ step: "check", token: "A".repeat(43) });
+  const madeUp = await r.text();
+  ok("a made-up link is refused", r.status === 404);
+  r = await join({ step: "check", token: "../staff/x" });
+  ok("a link shaped like a path is refused", r.status === 404 && (await r.text()) === madeUp);
+  r = await join({ step: "check", token: joinToken });
+  let details = await r.json();
+  ok("the right link shows who it's for", r.status === 200 && details.email === "new.person@example.test" && details.name === "Nia New");
+  ok("and a code to scan", details.qr?.startsWith("data:image/svg+xml;base64,") && details.otpauth?.includes(details.secret));
+  r = await join({ step: "check", token: joinToken });
+  ok("opening it again shows the same key", (await r.json()).secret === details.secret);
+  const stored2 = (await db.collection("invites").doc(sha256(joinToken)).get()).data();
+  ok("the key waits encrypted", !JSON.stringify(stored2).includes(details.secret));
+  const NEWPW = "another-test-password-e2e";
+  const nowCode = (secret, d = 0) => codeForStep(secret, stepAt(Date.now()) + d);
+  r = await join({ step: "finish", token: joinToken, password: "too-short", code: nowCode(details.secret) });
+  ok("a short password is refused", r.status === 422);
+  r = await join({ step: "finish", token: joinToken, password: "x".repeat(201), code: nowCode(details.secret) });
+  ok("an oversized password is refused", r.status === 422);
+  r = await join({ step: "finish", token: joinToken, password: NEWPW, code: "000000" });
+  ok("a wrong code is refused, so it can't lock them out", r.status === 422 && (await db.collection("staff").doc(nid).get()).data().active === false);
+  const firstCode = nowCode(details.secret);
+  const finishes = await Promise.all([join({ step: "finish", token: joinToken, password: NEWPW, code: firstCode }), join({ step: "finish", token: joinToken, password: "someone-else-password", code: firstCode })]);
+  const wins = finishes.filter((x) => x.status === 200);
+  ok("used twice at the same moment, one wins", wins.length === 1, finishes.map((x) => x.status).join());
+  const winPw = finishes[0].status === 200 ? NEWPW : "someone-else-password";
+  const codes = (await wins[0].json()).recovery;
+  ok("recovery codes are given once", codes?.length === 8);
+  nDoc = (await db.collection("staff").doc(nid).get()).data();
+  ok("the person is now active", nDoc.active === true && nDoc.role === "maintainer");
+  const whole = JSON.stringify(nDoc);
+  ok("no plain password, key or codes stored", !whole.includes(winPw) && !whole.includes(details.secret) && !codes.some((c) => whole.includes(c)));
+  r = await join({ step: "check", token: joinToken });
+  ok("a link works only once", r.status === 404 && (await r.text()) === madeUp);
+  r = await join({ step: "finish", token: joinToken, password: NEWPW, code: nowCode(details.secret, 1) });
+  ok("and can't finish again", r.status === 404);
+  ok("no sessions from joining", (await db.collection("sessions").where("staffId", "==", nid).get()).empty);
+  const nia = { email: "new.person@example.test" };
+  r = await post("/api/login", { ...nia, password: winPw, code: firstCode });
+  ok("the code used to join can't sign in", r.status === 401);
+  await db.collection("staff").doc(nid).update({ fails: 0 });
+  r = await post("/api/login", { ...nia, password: winPw, code: nowCode(details.secret, 1) });
+  ok("they sign in with their new details", r.status === 200, `${r.status}`);
+  const niaCookie = cookieOf(r);
+  page = await plain("/apps/tripsync", niaCookie);
+  ok("they see their app's tickets", page.includes("Trip secret subject"));
+  page = await plain("/apps/drivsync", niaCookie);
+  ok("and not another app's", !page.includes("Backup stuck on Syncing"));
+  r = await post("/api/apps/drivsync/tickets", { ...driveChange, note: "hacked" }, { cookie: niaCookie });
+  ok("nor can they change another app's", r.status === 404);
+
+  // Access
+  r = await post(`/api/people/${nid}`, { action: "apps", apps: ["made-up"] }, { cookie: boss });
+  ok("access to a made-up app is refused", r.status === 422);
+  r = await post(`/api/people/${nid}`, { action: "apps", apps: ["drivsync"] }, { cookie: boss });
+  ok("the main account changes their apps", r.status === 200);
+  page = await plain("/apps/drivsync", niaCookie);
+  ok("the new app opens on their next click", page.includes("Backup stuck on Syncing"));
+  page = await plain("/apps/tripsync", niaCookie);
+  ok("the old one is gone on their next click", !page.includes("Trip secret subject"));
+  r = await post("/api/apps/tripsync/tickets", tripChange, { cookie: niaCookie });
+  ok("and can't be changed either", r.status === 404);
+
+  // Reset
+  r = await post(`/api/people/${nid}`, { action: "reset" }, { cookie: boss });
+  made = await r.json();
+  ok("the main account resets someone", r.status === 200 && made.link?.includes("/join#"));
+  ok("they're out at once", (await get("/home", niaCookie)).status === 307);
+  ok("their sessions are gone", (await db.collection("sessions").where("staffId", "==", nid).get()).empty);
+  nDoc = (await db.collection("staff").doc(nid).get()).data();
+  ok("their old details are gone, their apps stay", !nDoc.passwordHash && !nDoc.totpSecret && !nDoc.recoveryHashes && nDoc.apps.join() === "drivsync");
+  r = await post("/api/login", { ...nia, password: winPw, code: nowCode(details.secret, 1) });
+  ok("the old password and authenticator stop working", r.status === 401);
+  r = await post("/api/login", { ...nia, password: winPw, code: codes[0] });
+  ok("so do the old recovery codes", r.status === 401);
+  const firstReset = tokenOf(made.link);
+  r = await post(`/api/people/${nid}`, { action: "reset" }, { cookie: boss });
+  made = await r.json();
+  r = await join({ step: "check", token: firstReset });
+  ok("a newer link ends the earlier one", r.status === 404);
+  joinToken = tokenOf(made.link);
+  r = await join({ step: "check", token: joinToken });
+  details = await r.json();
+  ok("the newer link works, with a new key", r.status === 200 && details.secret);
+  await db.collection("invites").doc(sha256(joinToken)).update({ expiresAt: Date.now() - 1000 });
+  r = await join({ step: "check", token: joinToken });
+  ok("a link that's run out is refused", r.status === 404 && (await r.text()) === madeUp);
+  r = await join({ step: "finish", token: joinToken, password: NEWPW, code: nowCode(details.secret) });
+  ok("and can't be finished", r.status === 404);
+  await db.collection("staff").doc(nid).update({ setupExpiresAt: Date.now() - 1000 });
+  page = await plain("/people", boss);
+  ok("the people page says it ran out", page.includes("Link ran out"));
+  r = await post(`/api/people/${nid}`, { action: "reset" }, { cookie: boss });
+  made = await r.json();
+  joinToken = tokenOf(made.link);
+  details = await (await join({ step: "check", token: joinToken })).json();
+  r = await join({ step: "finish", token: joinToken, password: NEWPW, code: nowCode(details.secret) });
+  ok("they set new details from the new link", r.status === 200);
+  r = await post("/api/login", { ...nia, password: NEWPW, code: nowCode(details.secret, 1) });
+  ok("and sign in with them", r.status === 200, `${r.status}`);
+  const niaAgain = cookieOf(r);
+
+  // Remove
+  r = await post(`/api/people/${nid}`, { action: "remove" }, { cookie: boss });
+  ok("the main account removes someone", r.status === 200);
+  ok("they're out at once", (await get("/home", niaAgain)).status === 307 && (await db.collection("sessions").where("staffId", "==", nid).get()).empty);
+  nDoc = (await db.collection("staff").doc(nid).get()).data();
+  ok("no secrets or apps are left, and the record stays for the log", nDoc.active === false && !nDoc.passwordHash && !nDoc.totpSecret && nDoc.apps.length === 0 && nDoc.removedAt > 0 && nDoc.email === nia.email);
+  r = await post("/api/login", { ...nia, password: NEWPW, code: nowCode(details.secret, 2) });
+  ok("they can't sign in", r.status === 401);
+  r = await post(`/api/people/${nid}`, { action: "remove" }, { cookie: boss });
+  ok("removing twice finds nothing", r.status === 404);
+  for (const action of [{ action: "reset" }, { action: "apps", apps: ["drivsync"] }]) {
+    r = await post(`/api/people/${nid}`, action, { cookie: boss });
+    ok(`someone removed can't be given back access by ${action.action}`, r.status === 404);
+  }
+  page = await plain("/people", boss);
+  ok("the people page shows them as removed", page.includes("Removed") && page.includes("Nia New"));
+  // A removed person's unfinished link dies with them
+  r = await post("/api/people", { email: "second@example.test", name: "Sam", apps: ["drivsync"] }, { cookie: boss });
+  made = await r.json();
+  const samId = staffIdForEmail("second@example.test");
+  const samToken = tokenOf(made.link);
+  details = await (await join({ step: "check", token: samToken })).json();
+  r = await post(`/api/people/${samId}`, { action: "remove" }, { cookie: boss });
+  r = await join({ step: "finish", token: samToken, password: NEWPW, code: nowCode(details.secret) });
+  ok("removing someone ends their unused link", r.status === 404 && (await db.collection("staff").doc(samId).get()).data().active === false);
+  r = await post("/api/people", { ...newbie, name: "Nia Again" }, { cookie: boss });
+  made = await r.json();
+  ok("someone removed can be invited again, fresh", r.status === 200 && made.link);
+  nDoc = (await db.collection("staff").doc(nid).get()).data();
+  ok("with nothing left over", !nDoc.removedAt && nDoc.active === false && nDoc.name === "Nia Again" && nDoc.apps.join() === "tripsync");
+  r = await join({ step: "check", token: tokenOf(made.link) });
+  details = await r.json();
+  ok("and a new key", r.status === 200 && details.email === nia.email);
+
+  // The log
+  page = await plain("/activity", boss);
+  ok("people changes are in the log", ["Person invited", "Finished setting up their account", "App access changed", "Sign-in reset", "New invite link", "Person removed"].every((t) => page.includes(t)));
+  ok("no links in the log", !page.includes("/join#"));
+  page = await plain("/activity", tara2);
+  ok("a maintainer doesn't see people changes", !page.includes("Person invited") && !page.includes("Person removed") && !page.includes("new.person@example.test"));
 
   // Limit per address
   const ip = "198.51.100.7";
