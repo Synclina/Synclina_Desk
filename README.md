@@ -12,13 +12,13 @@ Private ticket desk for Synclina's apps. It has no public pages: everything need
 - **Phase 1, foundation: live at https://synclina-desk.vercel.app** (Firebase project `synclina-desk`, Mumbai). Main account signed in on 5 November 2026. Login, sessions, activity log, main account setup.
 - **Phase 2, DrivSync tickets: live.** Checked on 5 Nov 2026: a status and note saved in Desk reached the open ticket in the app on a phone by themselves.
 - **Phase 3, people: live.** Invites, app access, resetting and removing, on the People page (main account only). Checked on the live site with a real invite in November 2026.
-- Phase 4, switch-over from the public website's admin area: not started.
+- **Phase 4, switch-over: the public website no longer has an admin area** (removed 5 November 2026, website commit `33c68a1`). Old settings, key and records are still to be deleted by hand.
 
 ## How it fits together
 
-- **Next.js on Vercel**, Mumbai region (`vercel.json`). The website's public admin area keeps working until phase 4.
+- **Next.js on Vercel**, Mumbai region (`vercel.json`). This is the only place tickets are managed.
 - **Desk's own Firebase project** holds staff, sessions and activity. `firestore.rules` denies all browser and app access; only the server's key reaches it.
-- **Tickets stay in each app's own Firebase project.** Desk will hold one key per app, and use it only after `canUseApp` in `src/lib/rules.ts` allows it.
+- **Tickets stay in each app's own Firebase project.** Desk holds one key per app, and uses it only after `canUseApp` in `src/lib/rules.ts` allows it.
 
 ## Database (Desk's Firestore)
 
