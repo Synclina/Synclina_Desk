@@ -8,7 +8,8 @@
     "start": "next start",
     "test": "node --no-warnings --test \"tests/*.test.mjs\"",
     "test:e2e": "node --no-warnings tests/e2e.mjs",
-    "desk:setup": "node --no-warnings scripts/desk-setup.mjs"
+    "desk:setup": "node --no-warnings scripts/desk-setup.mjs",
+    "desk:app-key": "node --no-warnings scripts/app-key.mjs"
   },
   "dependencies": {
     "firebase-admin": "^13.10.0",

@@ -54,3 +54,39 @@ export function visibleActivity<T extends { actorId: string | null; app: string 
   if (who.role === "owner") return entries;
   return entries.filter((e) => e.actorId === who.id || (e.app !== null && who.apps.includes(e.app)));
 }
+
+export type TicketStatus = "open" | "in_progress" | "fixed";
+export const TICKET_STATUSES: TicketStatus[] = ["open", "in_progress", "fixed"];
+
+export const STATUS_LABELS: Record<TicketStatus, string> = {
+  open: "Pending",
+  in_progress: "In progress",
+  fixed: "Fixed",
+};
+
+/** Reads a stored status the way the apps do: anything unknown counts as pending. */
+export function readStatus(value: unknown): TicketStatus {
+  const text = typeof value === "string" ? value.trim().toLowerCase().replace(/[\s-]+/g, "_") : "";
+  if (text === "in_progress" || text === "inprogress") return "in_progress";
+  if (["fixed", "resolved", "closed", "done"].includes(text)) return "fixed";
+  return "open";
+}
+
+export const NOTE_LIMIT = 1000;
+
+export type TicketChange = { uid: string; reference: string; status: TicketStatus; note: string };
+
+/** A ticket change from the page, checked against that app's references; null when anything is off. */
+export function readTicketChange(body: unknown, prefixes: string[]): TicketChange | null {
+  if (typeof body !== "object" || body === null) return null;
+  const { uid, reference, status, note } = body as Record<string, unknown>;
+  if (typeof uid !== "string" || !/^[A-Za-z0-9]{1,128}$/.test(uid)) return null;
+  if (typeof reference !== "string" || !/^[A-Z]{2}-[A-Z0-9]{6}$/.test(reference) || !prefixes.includes(reference.slice(0, 2))) return null;
+  if (typeof status !== "string" || !TICKET_STATUSES.includes(status as TicketStatus)) return null;
+  if (typeof note !== "string" || note.length > NOTE_LIMIT) return null;
+  return { uid, reference, status: status as TicketStatus, note: note.trim() };
+}
+
+/** A key connects an app only when it's for the project that app was told to expect. */
+export const keyFitsProject = (keyProject: unknown, expected: string | undefined) =>
+  typeof keyProject === "string" && expected !== undefined && keyProject === expected;

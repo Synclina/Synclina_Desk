@@ -571,7 +571,7 @@
 }
 
 /* Account */
-.details {
+.accountDetails {
   display: flex;
   flex-direction: column;
   gap: 0.9rem;
@@ -581,12 +581,12 @@
   border-radius: var(--radius-lg);
 }
 
-.details dt {
+.accountDetails dt {
   font-size: 0.8125rem;
   color: var(--text-secondary);
 }
 
-.details dd {
+.accountDetails dd {
   overflow-wrap: anywhere;
 }
 

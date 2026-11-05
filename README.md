@@ -10,7 +10,7 @@ Private ticket desk for Synclina's apps. It has no public pages: everything need
 ## Status
 
 - **Phase 1, foundation: live at https://synclina-desk.vercel.app** (Firebase project `synclina-desk`, Mumbai). Main account signed in on 5 November 2026. Login, sessions, activity log, main account setup.
-- Phase 2, DrivSync tickets: not started.
+- **Phase 2, DrivSync tickets: built and tested locally.** Live once `APP_DRIVSYNC_FIREBASE_KEY_B64` is added in Vercel.
 - Phase 3, people (invites, app access, removing and resetting): not started.
 - Phase 4, switch-over from the public website's admin area: not started.
 
@@ -28,6 +28,14 @@ Private ticket desk for Synclina's apps. It has no public pages: everything need
 | `sessions` | Hash of the cookie | `staffId`, `createdAt`, `lastSeenAt` |
 | `activity` | Automatic | `actorId`, `actor`, `action`, `detail`, `app`, `at` |
 | `sign_in_limits` | Hash of the address | `count`, `since` |
+
+## Connecting an app
+
+1. In the app's Google Cloud project, make a service account with **Cloud Datastore User** and **Firebase Authentication Viewer**, and download a JSON key.
+2. Set `firebaseProject` for the app in `src/lib/apps.ts`, then `npm run desk:app-key`.
+3. Add `APP_<SLUG>_FIREBASE_KEY_B64` to Vercel, Production only, and redeploy. A key for any other project is refused.
+
+The app must store tickets at `accounts/{uid}/support/{reference}` with `subject`, `topic`, `channel`, `createdAt` (timestamp), `status`, and optionally `message` and `deviceInfo`; reference prefixes are in `src/lib/apps.ts`. Desk writes `status`, `teamNote` and `updatedAt`. It needs a collection-group index on `support.createdAt`, descending.
 
 ## Security
 
@@ -51,7 +59,7 @@ npm run desk:setup
 **End-to-end checks** run on a real build and the local emulator (needs Java 21), and touch no real project:
 
 ```bash
-firebase emulators:start --only firestore --project demo-desk
+firebase emulators:start --only firestore,auth --project demo-desk
 ```
 
 ```bash
@@ -64,6 +72,7 @@ NEXT_DIST_DIR=.next-prod npx next build && npm run test:e2e
 |---|---|
 | `DESK_ENCRYPTION_KEY` | From `.env.desk`. Keep a safe copy: without it, nobody's authenticator can be read |
 | `DESK_FIREBASE_KEY_B64` | From `.env.desk` |
+| `APP_DRIVSYNC_FIREBASE_KEY_B64` | From `npm run desk:app-key`. One per connected app |
 | `BREVO_API_KEY` | Security emails; without it none are sent |
 | `DESK_ALERT_SENDER` | A sender verified in Brevo |
 

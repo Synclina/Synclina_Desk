@@ -1,6 +1,6 @@
 // End-to-end check against a real build and the local Firestore emulator. Nothing here
 // touches a real project. First, in another terminal (needs Java 21):
-//   firebase emulators:start --only firestore --project demo-desk
+//   firebase emulators:start --only firestore,auth --project demo-desk
 // Then: NEXT_DIST_DIR=.next-prod npm run build, and npm run test:e2e
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
@@ -9,16 +9,23 @@ import { codeForStep, newTotpSecret, stepAt } from "../src/lib/totp.ts";
 
 const require = createRequire(import.meta.url);
 process.env.FIRESTORE_EMULATOR_HOST = "127.0.0.1:8186";
+process.env.FIREBASE_AUTH_EMULATOR_HOST = "127.0.0.1:9199";
 const { initializeApp } = require("firebase-admin/app");
-const { getFirestore } = require("firebase-admin/firestore");
+const { Timestamp, getFirestore } = require("firebase-admin/firestore");
+const { getAuth } = require("firebase-admin/auth");
 const db = getFirestore(initializeApp({ projectId: "demo-desk" }));
+// Two apps, each a project of its own, to prove the wall between them.
+const drivApp = initializeApp({ projectId: "demo-app-drivsync" }, "driv");
+const tripApp = initializeApp({ projectId: "demo-app-tripsync" }, "trip");
+const driv = getFirestore(drivApp);
+const trip = getFirestore(tripApp);
 
 const PORT = 3200;
 const PREVIEW_PORT = 3201;
 const O = `http://localhost:${PORT}`;
 const KEY = newEncryptionKey();
 const PW = "test-password-for-e2e-only";
-const env = { ...process.env, DESK_ENCRYPTION_KEY: KEY, GCLOUD_PROJECT: "demo-desk", NEXT_DIST_DIR: ".next-prod", NODE_ENV: "production", BREVO_API_KEY: "" };
+const env = { ...process.env, DESK_ENCRYPTION_KEY: KEY, GCLOUD_PROJECT: "demo-desk", NEXT_DIST_DIR: ".next-prod", NODE_ENV: "production", BREVO_API_KEY: "", APP_DRIVSYNC_FIREBASE_KEY_B64: "emulator", APP_TRIPSYNC_FIREBASE_KEY_B64: "emulator", APP_INSTAGRO_FIREBASE_KEY_B64: "" };
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = "") => {
@@ -60,6 +67,18 @@ await addPerson("Tara", "tara@example.test", "maintainer", ["tripsync"]);
 await addPerson("Locky", "locky@example.test", "maintainer", ["drivsync"]);
 await addPerson("Recov", "recov@example.test", "maintainer", ["drivsync"]);
 await addPerson("Gone", "gone@example.test", "maintainer", ["drivsync"], false);
+
+// Tickets
+const at = (mins) => Timestamp.fromMillis(Date.now() - mins * 60000);
+await driv.recursiveDelete(driv.collection("accounts"));
+await driv.recursiveDelete(driv.collection("other"));
+await trip.recursiveDelete(trip.collection("accounts"));
+await getAuth(drivApp).createUser({ uid: "riderA", displayName: "Asha Rider", email: "asha@example.test" }).catch(() => {});
+await getAuth(tripApp).createUser({ uid: "riderA", displayName: "Tripper Tom", email: "tom@example.test" }).catch(() => {});
+await driv.doc("accounts/riderA/support/DS-AAAA22").set({ subject: "Backup stuck on Syncing", topic: "Backup", channel: "sent", message: "My backup is stuck.", createdAt: at(5), status: "open" });
+await driv.doc("accounts/riderA/support/FS-BBBB33").set({ subject: "Old drive ticket", topic: "Other", channel: "emailApp", createdAt: at(50), status: "fixed", teamNote: "Sorted" });
+await driv.doc("other/thing/support/DS-NOTKET").set({ subject: "NOT A TICKET", createdAt: at(1), status: "open" });
+await trip.doc("accounts/riderA/support/TS-CCCC44").set({ subject: "Trip secret subject", topic: "Trips", channel: "sent", message: "Private trip message.", createdAt: at(5), status: "open" });
 
 const server = spawn("npx", ["next", "start", "-p", String(PORT)], { shell: true, env, stdio: "ignore" });
 const preview = spawn("npx", ["next", "start", "-p", String(PREVIEW_PORT)], { shell: true, env: { ...env, VERCEL_ENV: "preview" }, stdio: "ignore" });
@@ -192,6 +211,74 @@ try {
   page = (await (await get("/activity", mayaCookie)).text()).replace(/<!-- -->/g, "");
   ok("a maintainer sees their own actions and app", page.includes("Maya: Signed in") && page.includes("Changed a DrivSync ticket"));
   ok("a maintainer doesn't see others' actions", !page.includes("Changed a TripSync ticket") && !page.includes("Tara: Signed in") && !page.includes("Owner: Signed in"));
+
+  // Tickets: the wall between apps
+  const plain = async (p, cookie) => (await (await get(p, cookie)).text()).replace(/<!-- -->/g, "");
+  r = await get("/apps/drivsync", mayaCookie);
+  page = (await r.text()).replace(/<!-- -->/g, "");
+  ok("a maintainer opens their app's tickets", r.status === 200 && page.includes("Backup stuck on Syncing") && page.includes("Old drive ticket"));
+  ok("the user's name comes from that app's accounts", page.includes("Asha Rider") && !page.includes("Tripper Tom"));
+  ok("a same-named collection isn't a ticket", !page.includes("NOT A TICKET"));
+  ok("another app's ticket isn't on their page", !page.includes("Trip secret subject") && !page.includes("Private trip message"));
+  r = await get("/apps/tripsync", mayaCookie);
+  page = await r.text();
+  ok("another app's page is not found", r.status === 404 || page.includes("NEXT_HTTP_ERROR_FALLBACK;404"), `${r.status}`);
+  ok("and shows none of its tickets", !page.includes("Trip secret subject") && !page.includes("Private trip message"));
+  page = await plain("/home", mayaCookie);
+  ok("home counts their app", page.includes("Pending") && page.includes("/apps/drivsync") && !page.includes("/apps/tripsync"));
+  page = await plain("/apps/tripsync", taraCookie);
+  ok("the other maintainer sees only theirs", page.includes("Trip secret subject") && page.includes("Tripper Tom") && !page.includes("Backup stuck"));
+  page = await plain("/apps/drivsync", taraCookie);
+  ok("and not this one", !page.includes("Backup stuck on Syncing"));
+  page = await plain("/apps/drivsync", ownerCookie);
+  ok("main account opens DrivSync", page.includes("Backup stuck on Syncing"));
+  page = await plain("/apps/tripsync", ownerCookie);
+  ok("main account opens TripSync", page.includes("Trip secret subject"));
+  page = await plain("/apps/instagro", ownerCookie);
+  ok("an app with no key says so", page.replace(/&#x27;/g, "'").includes("isn't connected yet"));
+  r = await get("/apps/made-up", ownerCookie);
+  page = await r.text();
+  ok("a made-up app is not found", r.status === 404 || page.includes("NEXT_HTTP_ERROR_FALLBACK;404"), `${r.status}`);
+  r = await get("/apps/drivsync");
+  ok("tickets need a session", r.status === 307 && !(await r.text()).includes("Backup stuck"));
+
+  const driveChange = { uid: "riderA", reference: "DS-AAAA22", status: "in_progress", note: " Looking into it " };
+  const tripChange = { uid: "riderA", reference: "TS-CCCC44", status: "fixed", note: "hacked" };
+  r = await post("/api/apps/drivsync/tickets", driveChange);
+  ok("changing a ticket needs a session", r.status === 401);
+  r = await post("/api/apps/drivsync/tickets", driveChange, { cookie: mayaCookie, origin: "https://evil.example" });
+  ok("changing a ticket from another site refused", r.status === 403);
+  r = await post("/api/apps/tripsync/tickets", tripChange, { cookie: mayaCookie });
+  ok("a maintainer can't change another app's ticket", r.status === 404, `${r.status}`);
+  r = await post("/api/apps/drivsync/tickets", tripChange, { cookie: mayaCookie });
+  ok("nor slip it in through their own app", r.status === 422, `${r.status}`);
+  r = await post("/api/apps/made-up/tickets", driveChange, { cookie: ownerCookie });
+  ok("a made-up app can't be changed", r.status === 404);
+  r = await post("/api/apps/instagro/tickets", { ...tripChange, reference: "IG-CCCC44" }, { cookie: ownerCookie });
+  ok("an unconnected app can't be changed", r.status === 404);
+  const tripDoc = (await trip.doc("accounts/riderA/support/TS-CCCC44").get()).data();
+  ok("the other app's ticket is untouched", tripDoc.status === "open" && !tripDoc.teamNote);
+  r = await post("/api/apps/drivsync/tickets", { ...driveChange, uid: "../x" }, { cookie: mayaCookie });
+  ok("a bad user id refused", r.status === 422);
+  r = await post("/api/apps/drivsync/tickets", { ...driveChange, reference: "DS-ZZZZZZ" }, { cookie: mayaCookie });
+  ok("a ticket that doesn't exist isn't created", r.status === 404 && !(await driv.doc("accounts/riderA/support/DS-ZZZZZZ").get()).exists);
+
+  r = await post("/api/apps/drivsync/tickets", driveChange, { cookie: mayaCookie });
+  ok("a maintainer changes their app's ticket", r.status === 200, `${r.status}`);
+  const saved = (await driv.doc("accounts/riderA/support/DS-AAAA22").get()).data();
+  ok("stored the way the app reads it", saved.status === "in_progress" && saved.teamNote === "Looking into it" && saved.updatedAt);
+  page = await plain("/activity", ownerCookie);
+  ok("the change is logged under its person and app", page.includes("Maya: Ticket updated") && page.includes("DS-AAAA22: Pending → In progress, note changed"));
+  ok("the log doesn't hold the note itself", !page.includes("Looking into it"));
+  page = await plain("/activity", taraCookie);
+  ok("another app's maintainer doesn't see that change", !page.includes("DS-AAAA22"));
+  page = await plain("/activity", mayaCookie);
+  ok("the maintainer sees it", page.includes("DS-AAAA22"));
+  r = await post("/api/apps/drivsync/tickets", { ...driveChange, status: "fixed", note: "" }, { cookie: ownerCookie });
+  ok("main account changes any app's ticket", r.status === 200);
+  const cleared = (await driv.doc("accounts/riderA/support/DS-AAAA22").get()).data();
+  ok("an empty note removes it", cleared.status === "fixed" && !("teamNote" in cleared));
+  ok("no Desk data in the app's database", !(await driv.listCollections()).some((c) => ["staff", "sessions", "activity", "sign_in_limits"].includes(c.id)));
 
   // Separate lockouts
   const L = people.Locky;

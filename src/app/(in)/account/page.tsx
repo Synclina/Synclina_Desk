@@ -11,7 +11,7 @@ export default async function Account() {
   return (
     <div className={styles.pageIn}>
       <h1 className={styles.pageTitle}>Your account</h1>
-      <dl className={styles.details}>
+      <dl className={styles.accountDetails}>
         <div>
           <dt>Name</dt>
           <dd>{staff.name}</dd>
