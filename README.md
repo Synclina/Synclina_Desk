@@ -10,7 +10,7 @@ Private ticket desk for Synclina's apps. It has no public pages: everything need
 ## Status
 
 - **Phase 1, foundation: live at https://synclina-desk.vercel.app** (Firebase project `synclina-desk`, Mumbai). Main account signed in on 5 November 2026. Login, sessions, activity log, main account setup.
-- **Phase 2, DrivSync tickets: built and tested locally.** Live once `APP_DRIVSYNC_FIREBASE_KEY_B64` is added in Vercel.
+- **Phase 2, DrivSync tickets: live.** Checked on 5 Nov 2026: a status and note saved in Desk reached the open ticket in the app on a phone by themselves.
 - Phase 3, people (invites, app access, removing and resetting): not started.
 - Phase 4, switch-over from the public website's admin area: not started.
 
