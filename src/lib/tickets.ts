@@ -1,8 +1,8 @@
-import { FieldValue, type DocumentSnapshot } from "firebase-admin/firestore";
+import { FieldValue, Timestamp, type DocumentSnapshot } from "firebase-admin/firestore";
 import { logActivity } from "./activity";
 import { deskApp } from "./apps";
 import { appAuth, appConnected, appDb } from "./firebase";
-import { STATUS_LABELS, canUseApp, readStatus, type Access, type TicketChange, type TicketStatus } from "./rules";
+import { STATUS_LABELS, canUseApp, readStatus, textOrNull, ticketOwner, type Access, type TicketChange, type TicketStatus } from "./rules";
 
 export type Ticket = {
   uid: string;
@@ -35,26 +35,22 @@ function ticketsOf(who: Access, slug: string) {
 /** How many of the newest tickets are shown. The page says so when there are more. */
 export const TICKET_LIMIT = 500;
 
-const uidOf = (doc: DocumentSnapshot) => {
-  const account = doc.ref.parent.parent;
-  return account?.parent.id === "accounts" ? account.id : null;
-};
+const uidOf = (doc: DocumentSnapshot) => ticketOwner(doc.ref.path);
 
 const iso = (value: unknown): string | null => {
-  const date = (value as { toDate?: () => Date } | null)?.toDate?.();
-  return date ? date.toISOString() : null;
+  return value instanceof Timestamp ? value.toDate().toISOString() : null;
 };
 
 const toTicket = (doc: DocumentSnapshot, uid: string): Ticket => ({
   uid,
   reference: doc.id,
-  subject: String(doc.get("subject") ?? ""),
-  topic: String(doc.get("topic") ?? ""),
-  channel: String(doc.get("channel") ?? "sent"),
-  message: (doc.get("message") as string | undefined) ?? null,
-  deviceInfo: (doc.get("deviceInfo") as string | undefined) ?? null,
+  subject: textOrNull(doc.get("subject")) ?? "",
+  topic: textOrNull(doc.get("topic")) ?? "",
+  channel: textOrNull(doc.get("channel")) ?? "sent",
+  message: textOrNull(doc.get("message")),
+  deviceInfo: textOrNull(doc.get("deviceInfo")),
   status: readStatus(doc.get("status")),
-  teamNote: (doc.get("teamNote") as string | undefined) ?? "",
+  teamNote: textOrNull(doc.get("teamNote")) ?? "",
   createdAt: iso(doc.get("createdAt")) ?? "",
   updatedAt: iso(doc.get("updatedAt")),
   userName: null,

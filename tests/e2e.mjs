@@ -78,6 +78,8 @@ await getAuth(tripApp).createUser({ uid: "riderA", displayName: "Tripper Tom", e
 await driv.doc("accounts/riderA/support/DS-AAAA22").set({ subject: "Backup stuck on Syncing", topic: "Backup", channel: "sent", message: "My backup is stuck.", createdAt: at(5), status: "open" });
 await driv.doc("accounts/riderA/support/FS-BBBB33").set({ subject: "Old drive ticket", topic: "Other", channel: "emailApp", createdAt: at(50), status: "fixed", teamNote: "Sorted" });
 await driv.doc("other/thing/support/DS-NOTKET").set({ subject: "NOT A TICKET", createdAt: at(1), status: "open" });
+await driv.doc("accounts/riderA/cars/c1/accounts/victim/support/DS-SPOOF1").set({ subject: "SPOOFED OWNER", createdAt: at(1), status: "open" });
+await driv.doc("accounts/riderA/support/DS-ODDONE").set({ subject: 5, topic: {}, message: { a: 1 }, deviceInfo: 7, teamNote: [], createdAt: at(2), updatedAt: "not a date", status: 9 });
 await trip.doc("accounts/riderA/support/TS-CCCC44").set({ subject: "Trip secret subject", topic: "Trips", channel: "sent", message: "Private trip message.", createdAt: at(5), status: "open" });
 
 const server = spawn("npx", ["next", "start", "-p", String(PORT)], { shell: true, env, stdio: "ignore" });
@@ -219,6 +221,8 @@ try {
   ok("a maintainer opens their app's tickets", r.status === 200 && page.includes("Backup stuck on Syncing") && page.includes("Old drive ticket"));
   ok("the user's name comes from that app's accounts", page.includes("Asha Rider") && !page.includes("Tripper Tom"));
   ok("a same-named collection isn't a ticket", !page.includes("NOT A TICKET"));
+  ok("a ticket nested under another path isn't a ticket", !page.includes("SPOOFED OWNER") && !page.includes("DS-SPOOF1"));
+  ok("a ticket with odd fields doesn't break the page", page.includes("DS-ODDONE"));
   ok("another app's ticket isn't on their page", !page.includes("Trip secret subject") && !page.includes("Private trip message"));
   r = await get("/apps/tripsync", mayaCookie);
   page = await r.text();

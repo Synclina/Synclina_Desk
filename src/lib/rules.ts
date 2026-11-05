@@ -90,3 +90,18 @@ export function readTicketChange(body: unknown, prefixes: string[]): TicketChang
 /** A key connects an app only when it's for the project that app was told to expect. */
 export const keyFitsProject = (keyProject: unknown, expected: string | undefined) =>
   typeof keyProject === "string" && expected !== undefined && keyProject === expected;
+
+/** The user a ticket belongs to: only the exact path accounts/{uid}/support/{reference} counts. */
+export function ticketOwner(path: string): string | null {
+  const parts = path.split("/");
+  return parts.length === 4 && parts[0] === "accounts" && parts[2] === "support" ? parts[1] : null;
+}
+
+/** A stored field as text, whatever a user's document happens to hold. */
+export const textOrNull = (value: unknown) => (typeof value === "string" ? value : null);
+
+/** A link to reply by email, or null when the address isn't a plain one. */
+export function replyLink(email: string | null, subject: string): string | null {
+  if (!email || !validEmail(email) || /[?&%=#,;:/\\<>"']/.test(email)) return null;
+  return `mailto:${email}?subject=${encodeURIComponent(subject)}`;
+}

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { NOTE_LIMIT, STATUS_LABELS, TICKET_STATUSES, type TicketStatus } from "@/lib/rules";
+import { NOTE_LIMIT, STATUS_LABELS, TICKET_STATUSES, replyLink, type TicketStatus } from "@/lib/rules";
 import type { Ticket } from "@/lib/tickets";
 import styles from "./Desk.module.css";
 
@@ -175,9 +175,7 @@ function TicketRow({
     if (!saving.current) void sendWaiting();
   };
 
-  const mail = ticket.userEmail
-    ? `mailto:${ticket.userEmail}?subject=${encodeURIComponent(`[${appTitle} ${ticket.reference}] ${ticket.subject}`)}`
-    : null;
+  const mail = replyLink(ticket.userEmail, `[${appTitle} ${ticket.reference}] ${ticket.subject}`);
 
   const noticeStyle = notice?.tone === "bad" ? styles.problem : notice?.tone === "good" ? styles.saved : styles.muted;
 
