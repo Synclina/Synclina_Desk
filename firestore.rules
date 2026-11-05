@@ -1,0 +1,10 @@
+rules_version = '2';
+// Desk's own database. Only Desk's server reads and writes it, with its key, which
+// these rules don't apply to. Nothing can reach it from a browser or an app.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

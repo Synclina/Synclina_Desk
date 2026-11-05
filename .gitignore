@@ -1,0 +1,15 @@
+node_modules/
+.next/
+.next-prod/
+out/
+.env*
+!.env.example
+*.tsbuildinfo
+next-env.d.ts
+.vercel
+*.log
+.firebase/
+firebase-export*/
+desk-owner-*.txt
+*service-account*.json
+*firebase-adminsdk*.json

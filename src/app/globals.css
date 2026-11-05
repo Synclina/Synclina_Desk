@@ -1,0 +1,167 @@
+/* =========================================
+   SYNCLINA DESIGN SYSTEM
+   ========================================= */
+
+:root {
+  /* ── Core Surfaces ── */
+  --bg-primary:      #050508;
+  --bg-secondary:    #0a0a0f;
+  --bg-card:         #111118;
+  --bg-card-hover:   #16161f;
+  --bg-glass:        rgba(17, 17, 24, 0.92);
+  --bg-glass-hover:  rgba(22, 22, 31, 0.75);
+
+  /* ── Brand Gradient ── */
+  --gradient-start:  #6D28D9;
+  --gradient-mid:    #A855F7;
+  --gradient-end:    #D946EF;
+  --brand-gradient:  linear-gradient(135deg, var(--gradient-start), var(--gradient-mid), var(--gradient-end));
+
+  /* ── Text ── */
+  --text-primary:    #F1F5F9;
+  --text-secondary:  #94A3B8;
+  --text-muted:      #475569;
+  --text-accent:     #A855F7;
+
+  /* ── Borders & Glow ── */
+  --border-subtle:   rgba(255, 255, 255, 0.06);
+  --border-glass:    rgba(168, 85, 247, 0.15);
+  --border-glass-hover: rgba(168, 85, 247, 0.35);
+  --glow-purple:     rgba(168, 85, 247, 0.12);
+  --glow-purple-intense: rgba(168, 85, 247, 0.25);
+
+  /* ── Product Accents ── */
+  --fuelsense:       #3B82F6;
+  --instagro:        #F472B6;
+  --tripsync:        #10B981;
+
+  /* ── Typography ── */
+  --font-display:    var(--font-outfit), 'Outfit', sans-serif;
+  --font-body:       var(--font-inter), 'Inter', sans-serif;
+  --font-mono:       var(--font-jetbrains), 'JetBrains Mono', monospace;
+
+  /* ── Spacing Scale ── */
+  --space-xs:   0.25rem;
+  --space-sm:   0.5rem;
+  --space-md:   1rem;
+  --space-lg:   1.5rem;
+  --space-xl:   2rem;
+  --space-2xl:  3rem;
+  --space-3xl:  4rem;
+  --space-4xl:  6rem;
+  --space-5xl:  8rem;
+
+  /* ── Radii ── */
+  --radius-sm:  0.5rem;
+  --radius-md:  0.75rem;
+  --radius-lg:  1rem;
+  --radius-xl:  1.5rem;
+  --radius-full: 9999px;
+
+  /* ── Transitions ── */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --duration-fast:   150ms;
+  --duration-normal: 300ms;
+  --duration-slow:   500ms;
+  --duration-slower:  800ms;
+
+  /* ── Z-Index Scale ── */
+  --z-background: -1;
+  --z-base:        0;
+  --z-elevated:    10;
+  --z-sticky:      100;
+  --z-overlay:     200;
+  --z-modal:       300;
+  --z-cursor:      9999;
+}
+
+/* ── RESET ── */
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 90px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  font-family: var(--font-body);
+  font-weight: 400;
+  line-height: 1.6;
+  color: var(--text-primary);
+  background-color: var(--bg-primary);
+  overflow-x: hidden;
+  min-height: 100vh;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+img, video {
+  max-width: 100%;
+  display: block;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+}
+
+ul, ol {
+  list-style: none;
+}
+
+/* ── TYPOGRAPHY SCALE ── */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+h1 {
+  font-size: clamp(2.5rem, 6vw, 5rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+h2 {
+  font-size: clamp(1.75rem, 4vw, 3rem);
+  font-weight: 700;
+}
+
+h3 {
+  font-size: clamp(1.25rem, 2.5vw, 1.75rem);
+  font-weight: 600;
+}
+
+p {
+  color: var(--text-secondary);
+  font-size: 1.0625rem;
+  line-height: 1.7;
+  max-width: 640px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
